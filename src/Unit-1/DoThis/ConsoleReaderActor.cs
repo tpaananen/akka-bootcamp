@@ -32,7 +32,7 @@ namespace WinTail
             _consoleWriterActor.Tell(read);
 
             // continue reading messages from the console
-            Self.Tell("continue");
+            Self.Tell("continue"); 
         }
 
     }
