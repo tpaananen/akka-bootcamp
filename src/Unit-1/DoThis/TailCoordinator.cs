@@ -6,8 +6,6 @@ namespace WinTail
 {
     public class TailCoordinatorActor : UntypedActor
     {
-        private IActorRef _reporterActor;
-
         #region Message types
         /// <summary>
         /// Start tailing the file at user-specified path.
@@ -45,7 +43,6 @@ namespace WinTail
             if (message is StartTail)
             {
                 var msg = (StartTail) message;
-                _reporterActor = msg.ReporterActor;
                 Context.ActorOf(Props.Create(() => new TailActor(msg.ReporterActor, msg.FilePath)));
             }
         }
@@ -64,14 +61,14 @@ namespace WinTail
                         return Directive.Resume;
                     }
 
-                    //Error that we cannot recover from, stop the failing actor
-                    if (x is NotSupportedException || x is IOException)
+                    if (x is FileRenamedException)
                     {
-                        return Directive.Stop;
+                        var ex = (FileRenamedException) x;
+                        Self.Tell(new StartTail(ex.NewFileName, ex.ReporterActor));
                     }
 
-                    //In all other cases, just restart the failing actor
-                    return Directive.Restart;
+                    //In all other cases, just stop the failing actor
+                    return Directive.Stop;
                 });
         }
     }

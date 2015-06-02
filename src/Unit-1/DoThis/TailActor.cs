@@ -69,42 +69,27 @@ namespace WinTail
 
         #endregion
 
-        private string _filePath;
         private readonly IActorRef _reporterActor;
-        private FileObserver _observer;
-        private Stream _fileStream;
-        private StreamReader _fileStreamReader;
+        private readonly FileObserver _observer;
+        private readonly Stream _fileStream;
+        private readonly StreamReader _fileStreamReader;
 
         public TailActor(IActorRef reporterActor, string filePath)
         {
             _reporterActor = reporterActor;
-            _filePath = filePath;
-        }
 
-        protected override void PostRestart(Exception reason)
-        {
-            if (reason is FileRenamedException)
-            {
-                var ex = (FileRenamedException) reason;
-                _filePath = ex.NewFileName;
-            }
-            base.PostRestart(reason);
-        }
-
-        protected override void PreStart()
-        {
             // start watching file for changes
-            _observer = new FileObserver(Self, Path.GetFullPath(_filePath));
+            _observer = new FileObserver(Self, Path.GetFullPath(filePath));
             _observer.Start();
 
             // open the file stream with shared read/write permissions (so file can be written to while open)
-            _fileStream = new FileStream(Path.GetFullPath(_filePath), FileMode.Open, FileAccess.Read,
+            _fileStream = new FileStream(Path.GetFullPath(filePath), FileMode.Open, FileAccess.Read,
                                          FileShare.ReadWrite | FileShare.Delete);
             _fileStreamReader = new StreamReader(_fileStream, Encoding.UTF8);
 
             // read the initial contents of the file and send it to console as first message
             var text = _fileStreamReader.ReadToEnd();
-            Self.Tell(new InitialReadMessage(_filePath, text));
+            Self.Tell(new InitialReadMessage(filePath, text));
         }
 
         protected override void OnReceive(object message)
@@ -124,7 +109,7 @@ namespace WinTail
             {
                 var fe = (FileRenamedMessage)message;
                 _reporterActor.Tell(string.Format("Tailed file renamed: {0} to {1}", fe.FileName, fe.NewFileName));
-                throw new FileRenamedException(fe.FileName, fe.NewFileName, fe.Reason);
+                throw new FileRenamedException(fe.FileName, fe.NewFileName, fe.Reason, _reporterActor);
             }
             else if (message is FileErrorMessage)
             {
