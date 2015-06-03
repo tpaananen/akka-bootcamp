@@ -67,7 +67,7 @@ namespace WinTail
                         Self.Tell(new StartTail(ex.NewFileName, ex.ReporterActor));
                     }
 
-                    //In all other cases, just stop the failing actor
+                    //In all other cases, just restart the failing actor
                     return Directive.Stop;
                 });
         }
