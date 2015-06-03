@@ -8,7 +8,7 @@ namespace WinTail
     /// <summary>
     /// Monitors the file at <see cref="_filePath"/> for changes and sends file updates to console.
     /// </summary>
-    public class TailActor : UntypedActor, IDisposable
+    public class TailActor : UntypedActor
     {
         #region Message types
 
@@ -69,27 +69,41 @@ namespace WinTail
 
         #endregion
 
+        private readonly string _filePath;
         private readonly IActorRef _reporterActor;
-        private readonly FileObserver _observer;
-        private readonly Stream _fileStream;
-        private readonly StreamReader _fileStreamReader;
+        private FileObserver _observer;
+        private Stream _fileStream;
+        private StreamReader _fileStreamReader;
 
         public TailActor(IActorRef reporterActor, string filePath)
         {
             _reporterActor = reporterActor;
+            _filePath = filePath;
+        }
 
+        protected override void PreStart()
+        {
             // start watching file for changes
-            _observer = new FileObserver(Self, Path.GetFullPath(filePath));
+            _observer = new FileObserver(Self, Path.GetFullPath(_filePath));
             _observer.Start();
 
             // open the file stream with shared read/write permissions (so file can be written to while open)
-            _fileStream = new FileStream(Path.GetFullPath(filePath), FileMode.Open, FileAccess.Read,
+            _fileStream = new FileStream(Path.GetFullPath(_filePath), FileMode.Open, FileAccess.Read,
                                          FileShare.ReadWrite | FileShare.Delete);
             _fileStreamReader = new StreamReader(_fileStream, Encoding.UTF8);
 
             // read the initial contents of the file and send it to console as first message
             var text = _fileStreamReader.ReadToEnd();
-            Self.Tell(new InitialReadMessage(filePath, text));
+            Self.Tell(new InitialReadMessage(_filePath, text));
+        }
+
+        protected override void PostStop()
+        {
+            _observer.Dispose();
+            _observer = null;
+            _fileStreamReader.Dispose();
+            _fileStream.Dispose();
+            base.PostStop();
         }
 
         protected override void OnReceive(object message)
@@ -121,22 +135,6 @@ namespace WinTail
             {
                 var ir = (InitialReadMessage) message;
                 _reporterActor.Tell(ir.Text);
-            }
-        }
-
-        public void Dispose()
-        {
-            Dispose(true);
-            GC.SuppressFinalize(this);
-        }
-
-        protected virtual void Dispose(bool disposing)
-        {
-            if (disposing)
-            {
-                _observer.Dispose();
-                _fileStreamReader.Dispose();
-                _fileStream.Dispose();
             }
         }
     }
