@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Linq;
 using Akka.Actor;
 using Akka.Routing;
 
@@ -60,15 +61,24 @@ namespace GithubActors.Actors
             Receive<CanAcceptJob>(job =>
             {
                 _coordinator.Tell(job);
-                BecomeAsking();
+                _canAcceptJobSender = Sender;
+                var self = Self;
+                _coordinator.Ask<Routees>(new GetRoutees()).PipeTo(self);
+                Become(ReceiveRouteeInfo);
             });
         }
 
-        private void BecomeAsking()
+        private void ReceiveRouteeInfo()
         {
-            _canAcceptJobSender = Sender;
-            _pendingJobReplies = 3; //the number of routees
-            Become(Asking);
+            Receive<CanAcceptJob>(job => Stash.Stash());
+            Receive<AbleToAcceptJob>(job => Stash.Stash());
+            Receive<UnableToAcceptJob>(job => Stash.Stash());
+            Receive<Routees>(x =>
+            {
+                _pendingJobReplies = x.Members.Count();
+                Become(Asking);
+                Stash.UnstashAll();
+            });
         }
 
         private void Asking()
@@ -109,12 +119,8 @@ namespace GithubActors.Actors
 
         protected override void PreStart()
         {
-            var c1 = Context.ActorOf(Props.Create(() => new GithubCoordinatorActor()), ActorPaths.GithubCoordinatorActor.Name + "1");
-            var c2 = Context.ActorOf(Props.Create(() => new GithubCoordinatorActor()), ActorPaths.GithubCoordinatorActor.Name + "2");
-            var c3 = Context.ActorOf(Props.Create(() => new GithubCoordinatorActor()), ActorPaths.GithubCoordinatorActor.Name + "3");
-
-            _coordinator = Context.ActorOf(Props.Empty.WithRouter(new BroadcastGroup(new [] { c1, c2, c3 })));
-
+            _coordinator = Context.ActorOf(Props.Create(() => new GithubCoordinatorActor()).WithRouter(FromConfig.Instance),
+            ActorPaths.GithubCoordinatorActor.Name);
             base.PreStart();
         }
 

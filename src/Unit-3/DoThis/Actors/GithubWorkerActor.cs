@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 using Akka.Actor;
 using Octokit;
 
@@ -72,20 +73,16 @@ namespace GithubActors.Actors
             {
                 // ReSharper disable once PossibleNullReferenceException (we know from the previous IS statement that this is not null)
                 var starrer = (query.Query as QueryStarrer).Login;
-                try
+                var sender = Sender;
+                _gitHubClient.Activity.Starring.GetAllForUser(starrer).ContinueWith<object>(x =>
                 {
-                    var getStarrer = _gitHubClient.Activity.Starring.GetAllForUser(starrer);
+                    if (x.IsFaulted || x.IsCanceled)
+                    {
+                        return query.NextTry();
+                    }
+                    return new StarredReposForUser(starrer, x.Result);
 
-                    //ewww
-                    getStarrer.Wait();
-                    var starredRepos = getStarrer.Result;
-                    Sender.Tell(new StarredReposForUser(starrer, starredRepos));
-                }
-                catch (Exception ex)
-                {
-                    //operation failed - let the parent know
-                    Sender.Tell(query.NextTry());
-                }
+                }).PipeTo(sender);
             });
 
             //query all starrers for a repository
@@ -93,20 +90,16 @@ namespace GithubActors.Actors
             {
                 // ReSharper disable once PossibleNullReferenceException (we know from the previous IS statement that this is not null)
                 var starrers = (query.Query as QueryStarrers).Key;
-                try
-                {
-                    var getStars = _gitHubClient.Activity.Starring.GetAllStargazers(starrers.Owner, starrers.Repo);
-
-                    //ewww
-                    getStars.Wait();
-                    var stars = getStars.Result;
-                    Sender.Tell(stars.ToArray());
-                }
-                catch (Exception ex)
-                {
-                    //operation failed - let the parent know
-                    Sender.Tell(query.NextTry());
-                }
+                var sender = Sender;
+                _gitHubClient.Activity.Starring.GetAllStargazers(starrers.Owner, starrers.Repo)
+                    .ContinueWith<object>(x =>
+                    {
+                        if (x.IsCanceled || x.IsFaulted)
+                        {
+                            return query.NextTry();
+                        }
+                        return x.Result.ToArray();
+                    }).PipeTo(sender);
             });
         }
     }
